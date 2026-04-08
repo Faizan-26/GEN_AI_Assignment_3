@@ -146,8 +146,7 @@ MODEL_PATHS = {
     "dcgan":     model_path("question_1_model/dcgan_generator_best.pth"),
     "wgan":      model_path("question_1_model/wgan-gp_generator_best.pth"),
     "pix2pix_g": model_path("question_2_model/pix2pix_generator_final.pth"),
-    "cyclegan_ab": model_path("question_3_model/G_AB_final.pth"),
-    "cyclegan_ba": model_path("question_3_model/G_BA_final.pth"),
+    "cyclegan": model_path("question_3_model/cyclegan_weights.pt"),
 }
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -260,55 +259,55 @@ class UNetGenerator(nn.Module):
         return self.d8(torch.cat([d7, e1], 1))
 
 
-# ── Q3: CycleGAN Generator ──
-class ResBlock(nn.Module):
-    def __init__(self, ch):
+# ── Q3: CycleGAN Generator (ResNetGenerator — matches updated notebook) ──
+class ResNetBlock(nn.Module):
+    def __init__(self, dim):
         super().__init__()
         self.block = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(ch, ch, 3),
-            nn.InstanceNorm2d(ch),
-            nn.ReLU(inplace=True),
+            nn.Conv2d(dim, dim, 3, 1, 0, bias=False),
+            nn.InstanceNorm2d(dim), nn.ReLU(True),
             nn.ReflectionPad2d(1),
-            nn.Conv2d(ch, ch, 3),
-            nn.InstanceNorm2d(ch),
+            nn.Conv2d(dim, dim, 3, 1, 0, bias=False),
+            nn.InstanceNorm2d(dim),
         )
 
     def forward(self, x):
-        return x + self.block(x)
+        return x + self.block(x)  # residual connection
 
 
-class CycleGANGenerator(nn.Module):
-    def __init__(self, in_ch=3, out_ch=3, ngf=64, n_res=6):
+class ResNetGenerator(nn.Module):
+    """
+    ResNet-based generator for CycleGAN.
+    Input/Output: (B, 3, 128, 128)
+    Matches the architecture saved in cyclegan_weights.pt.
+    """
+    def __init__(self, in_ch=3, out_ch=3, f=64, n_blocks=6):
         super().__init__()
         layers = [
             nn.ReflectionPad2d(3),
-            nn.Conv2d(in_ch, ngf, 7),
-            nn.InstanceNorm2d(ngf),
-            nn.ReLU(inplace=True),
+            nn.Conv2d(in_ch, f, 7, 1, 0, bias=False),
+            nn.InstanceNorm2d(f), nn.ReLU(True),
+            # Downsample x2
+            nn.Conv2d(f,   f*2, 3, 2, 1, bias=False), nn.InstanceNorm2d(f*2), nn.ReLU(True),
+            nn.Conv2d(f*2, f*4, 3, 2, 1, bias=False), nn.InstanceNorm2d(f*4), nn.ReLU(True),
         ]
-        ch = ngf
-        for _ in range(2):
-            layers += [
-                nn.Conv2d(ch, ch * 2, 3, stride=2, padding=1),
-                nn.InstanceNorm2d(ch * 2),
-                nn.ReLU(inplace=True),
-            ]
-            ch *= 2
-        for _ in range(n_res):
-            layers.append(ResBlock(ch))
-        for _ in range(2):
-            layers += [
-                nn.ConvTranspose2d(ch, ch // 2, 3, stride=2, padding=1, output_padding=1),
-                nn.InstanceNorm2d(ch // 2),
-                nn.ReLU(inplace=True),
-            ]
-            ch //= 2
-        layers += [nn.ReflectionPad2d(3), nn.Conv2d(ch, out_ch, 7), nn.Tanh()]
-        self.model = nn.Sequential(*layers)
+        for _ in range(n_blocks):
+            layers.append(ResNetBlock(f * 4))
+        layers += [
+            # Upsample x2
+            nn.ConvTranspose2d(f*4, f*2, 3, 2, 1, output_padding=1, bias=False),
+            nn.InstanceNorm2d(f*2), nn.ReLU(True),
+            nn.ConvTranspose2d(f*2, f,   3, 2, 1, output_padding=1, bias=False),
+            nn.InstanceNorm2d(f),   nn.ReLU(True),
+            nn.ReflectionPad2d(3),
+            nn.Conv2d(f, out_ch, 7, 1, 0),
+            nn.Tanh(),
+        ]
+        self.net = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.model(x)
+        return self.net(x)
 
 
 # ─── Model Loading (cached) ───────────────────────────────────────────────────
@@ -355,19 +354,20 @@ def load_pix2pix():
 
 @st.cache_resource
 def load_cyclegan():
-    path_ab = MODEL_PATHS["cyclegan_ab"]
-    path_ba = MODEL_PATHS["cyclegan_ba"]
-    if not os.path.exists(path_ab) or not os.path.exists(path_ba):
+    path = MODEL_PATHS["cyclegan"]
+    if not os.path.exists(path):
         return None, None
-    g_ab = CycleGANGenerator()
-    g_ba = CycleGANGenerator()
-    def _load(m, p):
-        state = torch.load(p, map_location="cpu", weights_only=True)
-        new_state = {k.replace("module.", ""): v for k, v in state.items()}
-        m.load_state_dict(new_state)
-        m.eval()
-        return m.to(DEVICE)
-    return _load(g_ab, path_ab), _load(g_ba, path_ba)
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    def _build_and_load(state_dict):
+        model = ResNetGenerator()
+        # Strip DataParallel prefix if present
+        clean = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        model.load_state_dict(clean)
+        model.eval()
+        return model.to(DEVICE)
+    g_ab = _build_and_load(checkpoint["G_AB"])
+    g_ba = _build_and_load(checkpoint["G_BA"])
+    return g_ab, g_ba
 
 
 # ─── Utility Helpers ─────────────────────────────────────────────────────────
@@ -423,7 +423,7 @@ with st.sidebar:
     dcgan_ok = os.path.exists(MODEL_PATHS["dcgan"])
     wgan_ok = os.path.exists(MODEL_PATHS["wgan"])
     p2p_ok = os.path.exists(MODEL_PATHS["pix2pix_g"])
-    cg_ok = os.path.exists(MODEL_PATHS["cyclegan_ab"]) and os.path.exists(MODEL_PATHS["cyclegan_ba"])
+    cg_ok = os.path.exists(MODEL_PATHS["cyclegan"])
 
     st.markdown("**Model Status:**")
     show_model_status("DCGAN", dcgan_ok)
@@ -461,8 +461,8 @@ if page == "🏠 Overview":
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### 🔄 Question 3")
         st.markdown("**CycleGAN (Sketch ↔ Photo)**")
-        st.markdown("Unpaired domain translation between sketches and photos using cycle-consistency loss. Trained for 35 epochs with ResNet generators.")
-        st.markdown('<span class="badge">128×128</span><span class="badge">ResNet-6</span><span class="badge">35 epochs</span>', unsafe_allow_html=True)
+        st.markdown("Unpaired domain translation between sketches and photos using cycle-consistency loss. Trained for 30 epochs with ResNet-6 generators on the Sketchy dataset.")
+        st.markdown('<span class="badge">128×128</span><span class="badge">ResNet-6</span><span class="badge">30 epochs</span>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
@@ -796,15 +796,15 @@ class Generator(nn.Module):
     with tab3:
         st.markdown('<p class="section-header">Training Configuration</p>', unsafe_allow_html=True)
         data = {
-            "Dataset": "TU-Berlin sketches + synthetic photos",
+            "Dataset": "Sketchy Dataset (unpaired sketch + photo)",
             "Image Size": "128×128 RGB",
             "Batch Size": 4,
-            "Epochs": 35,
+            "Epochs": 30,
             "LR": "0.0002, β=(0.5, 0.999)",
             "λ Cycle": 10,
             "λ Identity": 5,
             "ResBlocks": 6,
-            "Mixed Precision": "AMP (float16)",
+            "Adversarial Loss": "MSE (LSGAN)",
             "Replay Buffer": "50 images",
         }
         for k, v in data.items():
@@ -813,7 +813,7 @@ class Generator(nn.Module):
             col_v.markdown(str(v))
 
         st.divider()
-        st.markdown("**Final Evaluation Metrics (Epoch 35):**")
+        st.markdown("**Final Evaluation Metrics (Epoch 30):**")
         m_cols = st.columns(2)
         with m_cols[0]:
             st.markdown('<div class="metric-box"><div class="metric-value">0.8244</div><div class="metric-label">Sketch Cycle SSIM</div></div>', unsafe_allow_html=True)
