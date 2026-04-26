@@ -352,8 +352,8 @@ def load_cyclegan():
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     def _build_and_load(state_dict):
         model = ResNetGenerator()
-        # Strip DataParallel prefix if present
-        clean = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        # Remap 'model.' prefix to 'net.' to match ResNetGenerator architecture
+        clean = {k.replace("model.", "net."): v for k, v in state_dict.items()}
         model.load_state_dict(clean)
         model.eval()
         return model.to(DEVICE)
@@ -494,7 +494,7 @@ elif page == "🌸 Q1 — DCGAN & WGAN-GP":
             model_choice = st.selectbox("Select Model", ["DCGAN", "WGAN-GP"])
             n_images = st.slider("Number of images", 1, 16, 8)
             seed = st.number_input("Random seed (0 = random)", min_value=0, max_value=9999, value=0)
-            generate_btn = st.button("✨ Generate Anime Faces", use_container_width=True)
+            generate_btn = st.button("✨ Generate Anime Faces", width='stretch')
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col_out:
@@ -524,7 +524,7 @@ elif page == "🌸 Q1 — DCGAN & WGAN-GP":
                             row_imgs = imgs[row_start: row_start + cols_per_row]
                             cols = st.columns(len(row_imgs))
                             for c, img in zip(cols, row_imgs):
-                                c.image(img, use_container_width=True)
+                                c.image(img, width='stretch')
 
                         # Download strip
                         if n_images > 1:
@@ -608,8 +608,8 @@ elif page == "🖌️ Q2 — Pix2Pix":
 
             if uploaded:
                 input_img = Image.open(uploaded).convert("RGB")
-                st.image(input_img, caption="Uploaded sketch", use_container_width=True)
-                colorize_btn = st.button("✨ Colorize!", use_container_width=True)
+                st.image(input_img, caption="Uploaded sketch", width='stretch')
+                colorize_btn = st.button("✨ Colorize!", width='stretch')
             else:
                 colorize_btn = False
                 st.info("👆 Upload a sketch to get started.")
@@ -628,7 +628,7 @@ elif page == "🖌️ Q2 — Pix2Pix":
                         with torch.no_grad():
                             out_tensor = model(inp_tensor)
                         out_img = tensor_to_pil(out_tensor[0])
-                        st.image(out_img, caption="Pix2Pix colorized output", use_container_width=True)
+                        st.image(out_img, caption="Pix2Pix colorized output", width='stretch')
                         st.download_button(
                             "⬇️ Download Result",
                             img_to_bytes(out_img),
@@ -722,8 +722,8 @@ elif page == "🔄 Q3 — CycleGAN":
             uploaded = st.file_uploader("Choose image", type=["png", "jpg", "jpeg"])
             if uploaded:
                 input_img = Image.open(uploaded).convert("RGB")
-                st.image(input_img, caption=f"Input {domain_label}", use_container_width=True)
-                translate_btn = st.button(f"✨ Translate to {output_label}!", use_container_width=True)
+                st.image(input_img, caption=f"Input {domain_label}", width='stretch')
+                translate_btn = st.button(f"✨ Translate to {output_label}!", width='stretch')
             else:
                 translate_btn = False
                 st.info(f"👆 Upload a {domain_label} image.")
@@ -743,7 +743,7 @@ elif page == "🔄 Q3 — CycleGAN":
                         with torch.no_grad():
                             out_tensor = model(inp_tensor)
                         out_img = tensor_to_pil(out_tensor[0])
-                        st.image(out_img, caption=f"CycleGAN {output_label} output", use_container_width=True)
+                        st.image(out_img, caption=f"CycleGAN {output_label} output", width='stretch')
                         st.download_button(
                             "⬇️ Download Result",
                             img_to_bytes(out_img),
