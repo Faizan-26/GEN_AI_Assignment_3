@@ -429,7 +429,7 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "🏠 Overview":
     st.markdown('<p class="gradient-text">🎨 GenAI Assignment 3 — GAN Showcase</p>', unsafe_allow_html=True)
-    st.markdown("##### *22F-3858 Faizan Tariq & 22F-3060 Hassaan Ch*")
+    # st.markdown("##### *22F-3858 Faizan Tariq & 22F-3060 Hassaan Ch*")
     st.divider()
 
     col1, col2, col3 = st.columns(3)
