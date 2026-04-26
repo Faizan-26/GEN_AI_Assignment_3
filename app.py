@@ -352,8 +352,8 @@ def load_cyclegan():
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     def _build_and_load(state_dict):
         model = ResNetGenerator()
-        # Remap 'model.' prefix to 'net.' to match ResNetGenerator architecture
-        clean = {k.replace("model.", "net."): v for k, v in state_dict.items()}
+        # Strip DataParallel 'module.' prefix if present
+        clean = {k.replace("module.", ""): v for k, v in state_dict.items()}
         model.load_state_dict(clean)
         model.eval()
         return model.to(DEVICE)
