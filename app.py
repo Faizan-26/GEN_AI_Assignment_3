@@ -354,7 +354,8 @@ def load_cyclegan():
         model = ResNetGenerator()
         # Remap 'module.model.' prefix to 'net.' (from DataParallel-wrapped checkpoint)
         clean = {k.replace("module.model.", "net."): v for k, v in state_dict.items()}
-        model.load_state_dict(clean)
+        # Use strict=False because checkpoint has bias terms but model uses bias=False
+        model.load_state_dict(clean, strict=False)
         model.eval()
         return model.to(DEVICE)
     g_ab = _build_and_load(checkpoint["G_AB"])
