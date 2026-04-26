@@ -1,11 +1,3 @@
-"""
-GenAI Assignment 3 - Streamlit App
-Hosts all three GAN questions:
-  Q1: DCGAN & WGAN-GP (Anime Face Generation)
-  Q2: Pix2Pix (Sketch-to-Color Translation)
-  Q3: CycleGAN (Sketch ↔ Photo Translation)
-"""
-
 import os
 import io
 import torch
@@ -407,7 +399,7 @@ def show_model_status(name: str, loaded: bool):
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 🎨 GenAI Assignment 3")
-    st.markdown("*22F-3858 Faizan Tariq & 22F-3060 Hassaan Ch*")
+    # st.markdown("*22F-3858 Faizan Tariq & 22F-3060 Hassaan Ch*")
     st.divider()
 
     page = st.radio(
